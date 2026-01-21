@@ -15,3 +15,5 @@ arabic-reshaper
 python-bidi
 rich<14.0.0
 numpy==1.26.4
+streamlit
+pandas
