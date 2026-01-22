@@ -1,94 +1,135 @@
 import streamlit as st
-import folium
-from streamlit_folium import st_folium
-from modules.db import init_db, ensure_settings, get_setting
-from modules.style import apply_custom_style, get_custom_css
-from modules.evaluation import render_evaluation_module
-from modules.admin import render_admin_panel
-from modules.dashboard import render_dashboard
-from modules.report import render_report_module
-from modules.investment_committee import InvestmentCommitteeSystem
-from modules.municipal_lease_types import MunicipalLeaseTypes
-from modules.site_rental_value import SiteRentalValuation
+import pandas as pd
+import numpy as np
 
-# تهيئة النظام الأساسي
-apply_custom_style()
-init_db()
-ensure_settings()
+# --- 1. إعدادات الصفحة الأساسية (يجب أن يكون أول أمر) ---
+st.set_page_config(
+    page_title="نظام التقييم الإيجاري",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-class EnhancedApp:
-    def __init__(self):
-        self.lease_manager = MunicipalLeaseTypes()
-        self.committee_manager = InvestmentCommitteeSystem()
-        self.valuator = SiteRentalValuation()
+# --- 2. دالة التنسيق الجمالي (CSS) ---
+def local_css():
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+    
+    /* تنسيق الخط والاتجاه */
+    html, body, [class*="css"], .stMarkdown, .stText {
+        font-family: 'Tajawal', sans-serif;
+        direction: rtl;
+        text-align: right;
+    }
 
-    def render_dual_map(self):
-        """تفعيل الخريطة المزدوجة (Satellite + Street)"""
-        st.subheader("📍 تحديد الموقع الجغرافي (عرض الأقمار الصناعية)")
-        
-        map_type = st.radio("نوع العرض", ["أقمار صناعية (Satellite)", "خريطة الشوارع"], horizontal=True)
-        tiles = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" if "أقمار" in map_type else "OpenStreetMap"
-        attr = "Esri Satellite Imagery" if "أقمار" in map_type else "OpenStreetMap"
+    /* إخفاء القوائم الافتراضية لستريمليت */
+    #MainMenu, footer, header {visibility: hidden;}
+    .stDeployButton {display:none;}
 
-        m = folium.Map(location=[24.7136, 46.6753], zoom_start=6, tiles=tiles, attr=attr)
-        m.add_child(folium.LatLngPopup())
-        
-        output = st_folium(m, height=450, width="100%", key="main_map")
-        
-        if output.get("last_clicked"):
-            st.session_state.lat = output["last_clicked"]["lat"]
-            st.session_state.lng = output["last_clicked"]["lng"]
-            st.success(f"📍 تم تحديد الموقع: {st.session_state.lat:.5f}, {st.session_state.lng:.5f}")
+    /* الهيدر الاحترافي */
+    .main-header {
+        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+        color: white;
+        padding: 2.5rem;
+        border-radius: 20px;
+        margin-bottom: 2rem;
+        text-align: center;
+        box-shadow: 0 10px 25px rgba(30, 58, 138, 0.2);
+    }
 
-    def run(self):
-        st.markdown(get_custom_css(), unsafe_allow_html=True)
-        if 'authenticated' not in st.session_state: st.session_state.authenticated = False
+    /* تحسين البطاقات (Metrics) */
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        transition: 0.3s;
+    }
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.05);
+    }
 
-        if not st.session_state.authenticated:
-            self.render_login()
-        else:
-            self.render_main_interface()
+    /* تنسيق الجداول */
+    .stDataFrame {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+    }
 
-    def render_login(self):
-        st.markdown('<div class="main-header"><h1>🏛️ نظام تأجير العقارات البلدية</h1></div>', unsafe_allow_html=True)
-        with st.form("login"):
-            u = st.text_input("اسم المستخدم")
-            p = st.text_input("كلمة المرور", type="password")
-            if st.form_submit_button("دخول"):
-                st.session_state.authenticated = True
-                st.rerun()
+    /* تنسيق الأزرار */
+    .stButton>button {
+        width: 100%;
+        border-radius: 10px;
+        background: #1E3A8A;
+        color: white;
+        font-weight: bold;
+        height: 3rem;
+        border: none;
+        transition: 0.3s;
+    }
+    .stButton>button:hover {
+        background: #3B82F6;
+        color: white;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    def render_main_interface(self):
-        with st.sidebar:
-            st.title("القائمة الرئيسية")
-            choice = st.radio("انتقل إلى:", ["📊 لوحة التحكم", "📈 التقييم الإيجاري", "👥 لجنة الاستثمار", "📑 التقارير", "⚙️ الإعدادات"])
-        
-        if choice == "📊 لوحة التحكم": render_dashboard('admin')
-        elif choice == "📈 التقييم الإيجاري": self.render_valuation_page()
-        elif choice == "👥 لجنة الاستثمار": self.committee_manager.render_committee_module()
-        elif choice == "📑 التقارير": render_report_module('admin')
-        elif choice == "⚙️ الإعدادات": render_admin_panel('admin')
+local_css()
 
-    def render_valuation_page(self):
-        st.header("📍 تقييم القيمة الإيجارية للموقع")
-        self.render_dual_map()
-        
-        st.divider()
-        selected_key = self.lease_manager.render_lease_type_selection()
-        
-        # جلب المعامل من الإعدادات العامة
-        mult_key = self.lease_manager.lease_types[selected_key]['multiplier_key']
-        multiplier = float(get_setting(mult_key, 1.0))
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            area = st.number_input("المساحة الإجمالية م²", value=500.0)
-            base_p = st.number_input("السعر الاسترشادي للمتر (ريال)", value=200.0)
-        with col2:
-            final_rent = area * base_p * multiplier
-            st.metric("القيمة الإيجارية السنوية", f"{final_rent:,.2f} ريال")
-            st.caption(f"تم تطبيق معامل ضرب: {multiplier}")
+# --- 3. القائمة الجانبية (Sidebar) ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/602/602181.png", width=100) # أيقونة تجريبية
+    st.title("لوحة التحكم")
+    st.subheader("فلترة البيانات")
+    region = st.selectbox("اختر المنطقة", ["الرياض", "جدة", "الدمام", "مكة المكرمة"])
+    property_type = st.multiselect("نوع العقار", ["سكني", "تجاري", "إداري"], default="سكني")
+    st.divider()
+    st.info("هذا النظام مدعوم بالذكاء الاصطناعي لتقدير القيم الإيجارية.")
 
-if __name__ == "__main__":
-    app = EnhancedApp()
-    app.run()
+# --- 4. محتوى الصفحة الرئيسي ---
+
+# الهيدر
+st.markdown("""
+    <div class="main-header">
+        <h1>🏛️ نظام التقييم الإيجاري الذكي</h1>
+        <p>نظام متطور لتحليل وتخمين القيم العقارية بناءً على معايير السوق الحالية</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# صف الإحصائيات (Metrics)
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("متوسط سعر المتر", "550 ر.س", "12%+")
+m2.metric("عدد العقارات", "2,840", "150+")
+m3.metric("دقة التقييم", "94%", "0.5%+")
+m4.metric("تغير السوق", "مستقر", "تحسن")
+
+st.markdown("### 📊 نظرة عامة على السوق")
+
+# تقسيم الشاشة للرسوم والجداول
+left_col, right_col = st.columns([1.2, 1])
+
+with left_col:
+    st.subheader("تحليل الاتجاه الزمني")
+    # بيانات تجريبية للرسم
+    chart_data = pd.DataFrame(np.random.randn(20, 2), columns=['العام الماضي', 'العام الحالي'])
+    st.line_chart(chart_data)
+
+with right_col:
+    st.subheader("آخر التقييمات المنفذة")
+    # بيانات تجريبية للجدول
+    df = pd.DataFrame({
+        "العقار": ["شقة فاخرة", "محل تجاري", "فيلا دبلكس", "مكتب"],
+        "الحي": ["الملقا", "الروضة", "الياسمين", "العليا"],
+        "التقييم (ر.س)": ["60,000", "120,000", "180,000", "95,000"]
+    })
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+# زر إجراء عملية تقييم جديدة
+st.divider()
+if st.button("🚀 ابدأ تقييم عقار جديد الآن"):
+    st.balloons()
+    st.success("تم تفعيل وضع التقييم الذكي!")
